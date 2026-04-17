@@ -1,4 +1,5 @@
 'use client'
+import { Suspense } from 'react'
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { pollStatus, getVideoUrl } from '../../lib/api'
@@ -18,7 +19,7 @@ const ANGLE_LABELS: Record<string, string> = {
   'bold-claim': 'Bold claim'
 }
 
-export default function GeneratePage() {
+function GenerateContent() {
   const params = useSearchParams()
   const jobId = params.get('jobId')
   const [status, setStatus] = useState<JobStatus | null>(null)
@@ -41,7 +42,6 @@ export default function GeneratePage() {
     <div>
       <h1 style={{ fontSize: '24px', marginBottom: '1.5rem' }}>Generating your ads</h1>
 
-      {/* Progress */}
       {status && status.status !== 'done' && status.status !== 'error' && (
         <div style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '12px',
           padding: '1.5rem', marginBottom: '2rem' }}>
@@ -58,7 +58,6 @@ export default function GeneratePage() {
         </div>
       )}
 
-      {/* Error */}
       {status?.status === 'error' && (
         <div style={{ background: '#2a1010', border: '1px solid #5a2020', borderRadius: '12px',
           padding: '1.5rem', marginBottom: '2rem' }}>
@@ -66,7 +65,6 @@ export default function GeneratePage() {
         </div>
       )}
 
-      {/* Results */}
       {status?.status === 'done' && status.ads && (
         <div style={{ display: 'grid', gap: '1.5rem' }}>
           {status.ads.map((ad: AdVariant) => (
@@ -121,5 +119,13 @@ function VideoCard({ ad }: { ad: AdVariant }) {
         </div>
       </details>
     </div>
+  )
+}
+
+export default function GeneratePage() {
+  return (
+    <Suspense fallback={<p style={{ color: '#888', padding: '2rem' }}>Loading...</p>}>
+      <GenerateContent />
+    </Suspense>
   )
 }
