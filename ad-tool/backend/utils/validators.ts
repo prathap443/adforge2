@@ -1,20 +1,6 @@
 import { ProductInput } from '../types'
 
-type ValidationSuccess = {
-  success: true
-  data: ProductInput
-  errors?: never
-}
-
-type ValidationFailure = {
-  success: false
-  data?: never
-  errors: string[]
-}
-
-type ValidationResult = ValidationSuccess | ValidationFailure
-
-export function validateProductInput(body: any): ValidationResult {
+export function validateProductInput(body: any): { success: boolean; data: ProductInput; errors?: string[] } {
   const errors: string[] = []
   const required = ['productName', 'description', 'targetAudience', 'painPoint', 'mainBenefit', 'cta']
 
@@ -24,19 +10,16 @@ export function validateProductInput(body: any): ValidationResult {
     }
   }
 
-  if (errors.length > 0) {
-    return { success: false, errors }
-  }
-
   return {
-    success: true,
+    success: errors.length === 0,
+    errors,
     data: {
-      productName: body.productName.trim(),
-      description: body.description.trim(),
-      targetAudience: body.targetAudience.trim(),
-      painPoint: body.painPoint.trim(),
-      mainBenefit: body.mainBenefit.trim(),
-      cta: body.cta.trim(),
+      productName: (body.productName || '').trim(),
+      description: (body.description || '').trim(),
+      targetAudience: (body.targetAudience || '').trim(),
+      painPoint: (body.painPoint || '').trim(),
+      mainBenefit: (body.mainBenefit || '').trim(),
+      cta: (body.cta || '').trim(),
       screenshots: []
     }
   }
