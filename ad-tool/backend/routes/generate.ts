@@ -31,39 +31,35 @@ router.post('/generate', upload.array('screenshots', 5), async (req: Request, re
       return res.status(400).json({ error: 'Invalid input', details: validation.errors })
     }
 
-    const screenshots = (req.files as Express.Multer.File[] || []).map(f => f.path)
+    const d = validation.data
+    const screenshots = (req.files as Express.Multer.File[] || []).map((f: Express.Multer.File) => f.path)
 
     const productInput = {
-      productName: validation.data.productName,
-      description: validation.data.description,
-      targetAudience: validation.data.targetAudience,
-      painPoint: validation.data.painPoint,
-      mainBenefit: validation.data.mainBenefit,
-      cta: validation.data.cta,
+      productName: d.productName as string,
+      description: d.description as string,
+      targetAudience: d.targetAudience as string,
+      painPoint: d.painPoint as string,
+      mainBenefit: d.mainBenefit as string,
+      cta: d.cta as string,
       screenshots
     }
 
-    // Return jobId immediately — pipeline runs in background
     res.json({ jobId, status: 'started' })
 
-    // Step 1: Generate scripts
     jobs.set(jobId, { status: 'generating_scripts', step: 1, totalSteps: 4 })
     const scriptResult = await generateScripts(productInput)
     const timedAds = assignSceneTiming(scriptResult.ads)
 
-    // Step 2: Generate voiceovers
     jobs.set(jobId, { status: 'generating_voiceovers', step: 2, totalSteps: 4 })
     for (const ad of timedAds) {
       ad.audioPath = await generateVoiceover(ad.voiceover, `${jobId}-${ad.angle}`)
     }
 
-    // Step 3: Render videos
     jobs.set(jobId, { status: 'rendering_videos', step: 3, totalSteps: 4 })
     for (const ad of timedAds) {
       ad.videoPath = await renderAdVideo(ad, screenshots, jobId)
     }
 
-    // Step 4: Save and done
     await saveJobManifest(jobId, { input: productInput, ads: timedAds })
     jobs.set(jobId, { status: 'done', step: 4, totalSteps: 4, ads: timedAds })
 
