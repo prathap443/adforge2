@@ -1,10 +1,18 @@
 import { ProductInput } from '../types'
 
-interface ValidationResult {
-  success: boolean
-  data?: ProductInput
-  errors?: string[]
+type ValidationSuccess = {
+  success: true
+  data: ProductInput
+  errors?: never
 }
+
+type ValidationFailure = {
+  success: false
+  data?: never
+  errors: string[]
+}
+
+type ValidationResult = ValidationSuccess | ValidationFailure
 
 export function validateProductInput(body: any): ValidationResult {
   const errors: string[] = []
@@ -16,7 +24,9 @@ export function validateProductInput(body: any): ValidationResult {
     }
   }
 
-  if (errors.length > 0) return { success: false, errors }
+  if (errors.length > 0) {
+    return { success: false, errors }
+  }
 
   return {
     success: true,
