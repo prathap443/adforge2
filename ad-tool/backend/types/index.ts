@@ -1,10 +1,10 @@
 export interface ProductInput {
-  productName: string
-  description: string
-  targetAudience: string
-  painPoint: string
-  mainBenefit: string
-  cta: string
+  productName?: string
+  description?: string
+  targetAudience?: string
+  painPoint?: string
+  mainBenefit?: string
+  cta?: string
   screenshots: string[]
 }
 
