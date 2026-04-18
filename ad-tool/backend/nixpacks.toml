@@ -8,4 +8,4 @@ cmds = ["npm install"]
 cmds = ["echo done"]
 
 [start]
-cmd = "node -e \"require('ts-node').register({transpileOnly:true}); require('./index.ts')\""
+cmd = "npm start"
