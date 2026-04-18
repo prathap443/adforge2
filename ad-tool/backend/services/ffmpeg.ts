@@ -1,7 +1,6 @@
 import { execSync } from 'child_process'
 import path from 'path'
 import fs from 'fs'
-import { v4 as uuid } from 'uuid'
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
 const FONT = process.env.FONT_PATH || '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
@@ -15,27 +14,10 @@ interface SceneClipOptions {
   outputPath: string
   imagePath?: string
   isCta?: boolean
-  jobId?: string
 }
 
 function ensureDir(filePath: string) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
-}
-
-function writeTextFile(text: string, jobId = 'job'): string {
-  const dir = path.join(__dirname, '../tmp/text')
-  fs.mkdirSync(dir, { recursive: true })
-  const filePath = path.join(dir, `${jobId}-${uuid()}.txt`)
-  fs.writeFileSync(filePath, text, 'utf8')
-  return filePath
-}
-
-// FFmpeg filter escaping, not shell escaping
-function escFilterPath(p: string): string {
-  return p
-    .replace(/\\/g, '\\\\')
-    .replace(/:/g, '\\:')
-    .replace(/'/g, "\\'")
 }
 
 function escShellPath(p: string): string {
@@ -43,7 +25,7 @@ function escShellPath(p: string): string {
 }
 
 export async function createSceneClip(opts: SceneClipOptions): Promise<void> {
-  const { text, duration, outputPath, imagePath, isCta, jobId } = opts
+  const { text, duration, outputPath, imagePath, isCta } = opts
 
   ensureDir(outputPath)
 
@@ -51,10 +33,19 @@ export async function createSceneClip(opts: SceneClipOptions): Promise<void> {
   const bgColor = isCta ? '0x1a1a2e' : '0x0d0d0d'
   const fontSize = isCta ? 72 : 64
   const textY = isCta ? '(h-text_h)/2' : '(h*0.65)'
-  const textFile = writeTextFile(text, jobId)
 
-  const fontForFilter = escFilterPath(FONT)
-  const textFileForFilter = escFilterPath(textFile)
+  const safeText = text
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\\\'")
+    .replace(/\$/g, 'S')
+    .replace(/%/g, ' percent')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/,/g, '\\,')
+    .replace(/\n/g, ' ')
+    .replace(/\r/g, ' ')
+    .trim()
 
   let inputArgs = ''
   let videoFilter = ''
@@ -64,11 +55,11 @@ export async function createSceneClip(opts: SceneClipOptions): Promise<void> {
     videoFilter = [
       `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease`,
       `pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=${bgColor}`,
-      `drawtext=fontfile=${fontForFilter}:textfile=${textFileForFilter}:fontcolor=white:fontsize=${fontSize}:bordercolor=black:borderw=4:x=(w-text_w)/2:y=${textY}`
+      `drawtext=fontfile=${FONT}:text='${safeText}':fontcolor=white:fontsize=${fontSize}:bordercolor=black:borderw=4:x=(w-text_w)/2:y=${textY}`
     ].join(',')
   } else {
     inputArgs = `-f lavfi -t ${safeDuration} -i color=c=${bgColor}:size=${WIDTH}x${HEIGHT}:rate=${FPS}`
-    videoFilter = `drawtext=fontfile=${fontForFilter}:textfile=${textFileForFilter}:fontcolor=white:fontsize=${fontSize}:bordercolor=black:borderw=4:x=(w-text_w)/2:y=${textY}`
+    videoFilter = `drawtext=fontfile=${FONT}:text='${safeText}':fontcolor=white:fontsize=${fontSize}:bordercolor=black:borderw=4:x=(w-text_w)/2:y=${textY}`
   }
 
   const cmd = `${FFMPEG} -y ${inputArgs} -vf "${videoFilter}" -c:v libx264 -pix_fmt yuv420p -r ${FPS} ${escShellPath(outputPath)} 2>&1`
@@ -86,8 +77,6 @@ export async function createSceneClip(opts: SceneClipOptions): Promise<void> {
       'Unknown ffmpeg error'
 
     throw new Error(`FFmpeg scene clip failed:\n${stderr}\nCommand: ${cmd}`)
-  } finally {
-    if (fs.existsSync(textFile)) fs.unlinkSync(textFile)
   }
 }
 
@@ -114,7 +103,9 @@ export async function concatClips(clipPaths: string[], outputPath: string): Prom
 
     throw new Error(`FFmpeg concat failed:\n${stderr}\nCommand: ${cmd}`)
   } finally {
-    if (fs.existsSync(concatFile)) fs.unlinkSync(concatFile)
+    if (fs.existsSync(concatFile)) {
+      fs.unlinkSync(concatFile)
+    }
   }
 }
 
