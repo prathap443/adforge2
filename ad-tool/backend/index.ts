@@ -3,6 +3,7 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import path from 'path'
 import fs from 'fs'
+import { execSync } from 'child_process'
 import { generateRoute } from './routes/generate'
 import { statusRoute } from './routes/status'
 import { historyRoute } from './routes/history'
@@ -18,6 +19,14 @@ dirs.forEach(d => {
     console.log(`[Init] Created directory: ${full}`)
   }
 })
+
+// Verify FFmpeg is available
+try {
+  const ffmpegVersion = execSync('ffmpeg -version 2>&1').toString().split('\n')[0]
+  console.log(`[Init] FFmpeg found: ${ffmpegVersion}`)
+} catch (e) {
+  console.error('[Init] FFmpeg NOT FOUND — video renders will fail!')
+}
 
 const app = express()
 const PORT = process.env.PORT || 3001
