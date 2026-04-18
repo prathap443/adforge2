@@ -1,33 +1,46 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { ProductInput, GenerationResult, AdVariant } from '../types'
+import { ProductInput, GenerationResult } from '../types'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const SYSTEM_PROMPT = `You are a direct-response ad copywriter for short vertical mobile video (TikTok/Reels/Shorts).
 
-Return ONLY valid JSON. No commentary. No markdown. No backticks. Just raw JSON.
-
-Create exactly 3 ad variants with these angles:
-- "pain" — lead with the user's frustration
-- "curiosity" — hook with intrigue or a surprising question  
-- "bold-claim" — open with a confident, almost provocative statement
-
-Each variant must follow this exact schema:
+Return ONLY a valid JSON object in this exact format with no other text:
 {
-  "angle": "pain" | "curiosity" | "bold-claim",
-  "hook": "opening line (max 12 words)",
-  "voiceover": "full spoken script as one paragraph",
-  "scenes": [
-    { "text": "on-screen text (max 8 words)", "durationHint": 4 }
+  "ads": [
+    {
+      "angle": "pain",
+      "hook": "opening line max 12 words",
+      "voiceover": "full spoken script as one paragraph",
+      "scenes": [
+        { "text": "on-screen text max 8 words", "durationHint": 4 }
+      ]
+    },
+    {
+      "angle": "curiosity",
+      "hook": "opening line max 12 words",
+      "voiceover": "full spoken script as one paragraph",
+      "scenes": [
+        { "text": "on-screen text max 8 words", "durationHint": 4 }
+      ]
+    },
+    {
+      "angle": "bold-claim",
+      "hook": "opening line max 12 words",
+      "voiceover": "full spoken script as one paragraph",
+      "scenes": [
+        { "text": "on-screen text max 8 words", "durationHint": 4 }
+      ]
+    }
   ]
 }
 
 Rules:
+- Return exactly 3 ads with angles: pain, curiosity, bold-claim
 - 4 to 5 scenes per ad
-- Total video target: 20-28 seconds
 - Last scene must contain the CTA
 - Language: punchy, conversational, no jargon
-- Mobile-first: short lines, big ideas`
+- No markdown, no backticks, no explanation — just the JSON object`
 
 export async function generateScripts(input: ProductInput): Promise<GenerationResult> {
   const userPrompt = `Product: ${input.productName}
@@ -37,9 +50,9 @@ Pain point: ${input.painPoint}
 Main benefit: ${input.mainBenefit}
 CTA: ${input.cta}`
 
-  let attempts = 0
-  while (attempts < 2) {
-    attempts++
+  let lastError = ''
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const response = await client.messages.create({
         model: 'claude-sonnet-4-20250514',
@@ -49,21 +62,32 @@ CTA: ${input.cta}`
       })
 
       const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+      
       // Strip any accidental markdown fences
-      const cleaned = raw.replace(/```json|```/g, '').trim()
+      const cleaned = raw
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim()
+
+      console.log(`[ScriptGen] Attempt ${attempt} raw response:`, cleaned.substring(0, 200))
+
       const parsed = JSON.parse(cleaned)
 
-      if (!parsed.ads || !Array.isArray(parsed.ads) || parsed.ads.length !== 3) {
-        throw new Error('Invalid response structure — expected {ads: [...]} with 3 items')
+      // Handle both {ads: [...]} and direct array responses
+      const ads = parsed.ads || (Array.isArray(parsed) ? parsed : null)
+
+      if (!ads || !Array.isArray(ads) || ads.length < 3) {
+        throw new Error(`Expected 3 ads, got: ${JSON.stringify(parsed).substring(0, 100)}`)
       }
 
-      return parsed as GenerationResult
+      return { ads }
 
-    } catch (err) {
-      if (attempts >= 2) throw new Error(`Script generation failed after 2 attempts: ${err}`)
-      console.warn('Script parse failed, retrying...', err)
+    } catch (err: any) {
+      lastError = err.message
+      console.warn(`[ScriptGen] Attempt ${attempt} failed:`, err.message)
+      if (attempt < 3) await new Promise(r => setTimeout(r, 1000))
     }
   }
 
-  throw new Error('Script generation failed')
+  throw new Error(`Script generation failed after 3 attempts: ${lastError}`)
 }
