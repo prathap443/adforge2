@@ -11,17 +11,22 @@ export async function renderAdVideo(
   screenshots: string[],
   jobId: string
 ): Promise<string> {
+  if (!ad.audioPath || !fs.existsSync(ad.audioPath)) {
+    throw new Error(`Missing audio file for ad angle: ${ad.angle}`)
+  }
+
+  fs.mkdirSync(VIDEOS_DIR, { recursive: true })
+  fs.mkdirSync(FRAMES_DIR, { recursive: true })
+
   const outputPath = path.join(VIDEOS_DIR, `${jobId}-${ad.angle}.mp4`)
   const clipPaths: string[] = []
 
-  // Assign visual type per scene — rotate screenshots, fallback to text-only
   const enrichedScenes = ad.scenes.map((scene, i) => ({
     ...scene,
     image: screenshots.length > 0 ? screenshots[i % screenshots.length] : undefined,
     visualType: screenshots.length > 0 ? 'screenshot' : 'text-only'
   }))
 
-  // Render each scene as a short clip
   for (let i = 0; i < enrichedScenes.length; i++) {
     const scene = enrichedScenes[i]
     const clipPath = path.join(FRAMES_DIR, `${jobId}-${ad.angle}-scene${i}.mp4`)
@@ -31,22 +36,21 @@ export async function renderAdVideo(
       duration: scene.duration || 4,
       outputPath: clipPath,
       imagePath: scene.image,
-      isCta: i === enrichedScenes.length - 1
+      isCta: i === enrichedScenes.length - 1,
+      jobId
     })
 
     clipPaths.push(clipPath)
   }
 
-  // Concatenate all scene clips
   const silentVideoPath = path.join(FRAMES_DIR, `${jobId}-${ad.angle}-silent.mp4`)
   await concatClips(clipPaths, silentVideoPath)
+  await addAudio(silentVideoPath, ad.audioPath, outputPath)
 
-  // Add voiceover
-  await addAudio(silentVideoPath, ad.audioPath!, outputPath)
-
-  // Cleanup intermediate clips
-  clipPaths.forEach(p => fs.existsSync(p) && fs.unlinkSync(p))
-  fs.existsSync(silentVideoPath) && fs.unlinkSync(silentVideoPath)
+  for (const p of clipPaths) {
+    if (fs.existsSync(p)) fs.unlinkSync(p)
+  }
+  if (fs.existsSync(silentVideoPath)) fs.unlinkSync(silentVideoPath)
 
   console.log(`[Renderer] Done: ${outputPath}`)
   return outputPath
