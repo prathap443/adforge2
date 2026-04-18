@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
 import path from 'path'
-import fs from 'fs'
 import { v4 as uuid } from 'uuid'
+
 import { validateProductInput } from '../utils/validators'
 import { generateScripts } from '../services/scriptGenerator'
 import { assignSceneTiming } from '../services/sceneTiming'
@@ -13,25 +13,11 @@ import { jobs } from '../utils/jobStore'
 
 const router = Router()
 
-const uploadsDir = path.join(__dirname, '../tmp/uploads')
-fs.mkdirSync(uploadsDir, { recursive: true })
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadsDir)
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || (
-      file.mimetype === 'image/png' ? '.png' :
-      file.mimetype === 'image/webp' ? '.webp' :
-      '.jpg'
-    )
-    cb(null, `${uuid()}${ext}`)
-  }
-})
-
+// ==============================
+// File upload config
+// ==============================
 const upload = multer({
-  storage,
+  dest: path.join(__dirname, '../tmp/uploads'),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp']
@@ -39,6 +25,9 @@ const upload = multer({
   }
 })
 
+// ==============================
+// Generate route
+// ==============================
 router.post('/generate', upload.array('screenshots', 5), async (req: Request, res: Response) => {
   const jobId = uuid()
 
@@ -46,13 +35,15 @@ router.post('/generate', upload.array('screenshots', 5), async (req: Request, re
     const validation = validateProductInput(req.body)
 
     if (!validation.success) {
-      return res.status(400).json({ error: 'Invalid input', details: validation.errors })
+      return res.status(400).json({
+        error: 'Invalid input',
+        details: validation.errors
+      })
     }
 
     const d = validation.data
-    const screenshots = ((req.files as Express.Multer.File[]) || []).map(
-      (f: Express.Multer.File) => f.path
-    )
+
+    const screenshots = (req.files as Express.Multer.File[] || []).map(f => f.path)
 
     const productInput = {
       productName: d.productName as string,
@@ -64,9 +55,12 @@ router.post('/generate', upload.array('screenshots', 5), async (req: Request, re
       screenshots
     }
 
-    jobs.set(jobId, { status: 'queued', step: 0, totalSteps: 4 })
+    // ✅ Return immediately (important for frontend)
     res.json({ jobId, status: 'started' })
 
+    // ==============================
+    // Background pipeline
+    // ==============================
     ;(async () => {
       try {
         jobs.set(jobId, { status: 'generating_scripts', step: 1, totalSteps: 4 })
@@ -86,6 +80,25 @@ router.post('/generate', upload.array('screenshots', 5), async (req: Request, re
           ad.videoPath = await renderAdVideo(ad, screenshots, jobId)
         }
 
+        // ==============================
+        // 🔥 Convert paths → PUBLIC URLs
+        // ==============================
+        const baseUrl =
+          process.env.PUBLIC_BACKEND_URL ||
+          'https://adforge2-production.up.railway.app'
+
+        for (const ad of timedAds) {
+          if (ad.videoPath) {
+            const fileName = path.basename(ad.videoPath)
+            ad.videoPath = `${baseUrl}/videos/${fileName}`
+          }
+
+          if (ad.audioPath) {
+            const fileName = path.basename(ad.audioPath)
+            ad.audioPath = `${baseUrl}/audio/${fileName}`
+          }
+        }
+
         await saveJobManifest(jobId, { input: productInput, ads: timedAds })
 
         jobs.set(jobId, {
@@ -96,17 +109,19 @@ router.post('/generate', upload.array('screenshots', 5), async (req: Request, re
         })
       } catch (err: any) {
         console.error(`[${jobId}] Pipeline error:`, err)
+
         jobs.set(jobId, {
           status: 'error',
-          error: err?.message || 'Unknown error'
+          error: err.message || 'Unknown error'
         })
       }
     })()
-
   } catch (err: any) {
-    console.error(`[${jobId}] Request error:`, err)
-    jobs.set(jobId, { status: 'error', error: err?.message || 'Unknown error' })
-    return res.status(500).json({ error: 'Failed to start generation' })
+    console.error(`[${jobId}] Immediate error:`, err)
+
+    return res.status(500).json({
+      error: err.message || 'Internal error'
+    })
   }
 })
 
