@@ -21,9 +21,12 @@ export async function createSceneClip(opts: SceneClipOptions): Promise<void> {
 
   // Escape text for FFmpeg drawtext (colons and special chars need escaping)
   const safeText = text
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/:/g, '\\:')
+  .replace(/['"\\]/g, '')      // remove quotes and backslashes
+  .replace(/:/g, '-')          // colon to dash
+  .replace(/\$/g, 'S')         // dollar to S
+  .replace(/%/g, ' pct')       // percent to pct
+  .replace(/[^\x20-\x7E]/g, '') // strip non-ASCII
+  .trim()
 
   const bgColor = isCta ? '0x1a1a2e' : '0x0d0d0d'
   const fontSize = isCta ? 72 : 64
