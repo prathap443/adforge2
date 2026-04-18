@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import multer from 'multer'
 import path from 'path'
+import fs from 'fs'
 import { v4 as uuid } from 'uuid'
 import { validateProductInput } from '../utils/validators'
 import { generateScripts } from '../services/scriptGenerator'
@@ -12,8 +13,25 @@ import { jobs } from '../utils/jobStore'
 
 const router = Router()
 
+const uploadsDir = path.join(__dirname, '../tmp/uploads')
+fs.mkdirSync(uploadsDir, { recursive: true })
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, uploadsDir)
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname) || (
+      file.mimetype === 'image/png' ? '.png' :
+      file.mimetype === 'image/webp' ? '.webp' :
+      '.jpg'
+    )
+    cb(null, `${uuid()}${ext}`)
+  }
+})
+
 const upload = multer({
-  dest: path.join(__dirname, '../tmp/uploads'),
+  storage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp']
@@ -32,7 +50,9 @@ router.post('/generate', upload.array('screenshots', 5), async (req: Request, re
     }
 
     const d = validation.data
-    const screenshots = (req.files as Express.Multer.File[] || []).map((f: Express.Multer.File) => f.path)
+    const screenshots = ((req.files as Express.Multer.File[]) || []).map(
+      (f: Express.Multer.File) => f.path
+    )
 
     const productInput = {
       productName: d.productName as string,
@@ -44,28 +64,49 @@ router.post('/generate', upload.array('screenshots', 5), async (req: Request, re
       screenshots
     }
 
+    jobs.set(jobId, { status: 'queued', step: 0, totalSteps: 4 })
     res.json({ jobId, status: 'started' })
 
-    jobs.set(jobId, { status: 'generating_scripts', step: 1, totalSteps: 4 })
-    const scriptResult = await generateScripts(productInput)
-    const timedAds = assignSceneTiming(scriptResult.ads)
+    ;(async () => {
+      try {
+        jobs.set(jobId, { status: 'generating_scripts', step: 1, totalSteps: 4 })
 
-    jobs.set(jobId, { status: 'generating_voiceovers', step: 2, totalSteps: 4 })
-    for (const ad of timedAds) {
-      ad.audioPath = await generateVoiceover(ad.voiceover, `${jobId}-${ad.angle}`)
-    }
+        const scriptResult = await generateScripts(productInput)
+        const timedAds = assignSceneTiming(scriptResult.ads)
 
-    jobs.set(jobId, { status: 'rendering_videos', step: 3, totalSteps: 4 })
-    for (const ad of timedAds) {
-      ad.videoPath = await renderAdVideo(ad, screenshots, jobId)
-    }
+        jobs.set(jobId, { status: 'generating_voiceovers', step: 2, totalSteps: 4 })
 
-    await saveJobManifest(jobId, { input: productInput, ads: timedAds })
-    jobs.set(jobId, { status: 'done', step: 4, totalSteps: 4, ads: timedAds })
+        for (const ad of timedAds) {
+          ad.audioPath = await generateVoiceover(ad.voiceover, `${jobId}-${ad.angle}`)
+        }
+
+        jobs.set(jobId, { status: 'rendering_videos', step: 3, totalSteps: 4 })
+
+        for (const ad of timedAds) {
+          ad.videoPath = await renderAdVideo(ad, screenshots, jobId)
+        }
+
+        await saveJobManifest(jobId, { input: productInput, ads: timedAds })
+
+        jobs.set(jobId, {
+          status: 'done',
+          step: 4,
+          totalSteps: 4,
+          ads: timedAds
+        })
+      } catch (err: any) {
+        console.error(`[${jobId}] Pipeline error:`, err)
+        jobs.set(jobId, {
+          status: 'error',
+          error: err?.message || 'Unknown error'
+        })
+      }
+    })()
 
   } catch (err: any) {
-    console.error(`[${jobId}] Pipeline error:`, err)
-    jobs.set(jobId, { status: 'error', error: err.message || 'Unknown error' })
+    console.error(`[${jobId}] Request error:`, err)
+    jobs.set(jobId, { status: 'error', error: err?.message || 'Unknown error' })
+    return res.status(500).json({ error: 'Failed to start generation' })
   }
 })
 
