@@ -67,6 +67,7 @@ CTA: ${input.cta}`
       const cleaned = raw
         .replace(/```json/gi, '')
         .replace(/```/g, '')
+        .replace(/,(\s*[}\]])/g, '$1')
         .trim()
 
       console.log(`[ScriptGen] FULL RAW:`, cleaned)
