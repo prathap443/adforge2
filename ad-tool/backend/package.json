@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "ts-node-dev --respawn index.ts",
-    "build": "echo 'no build needed'",
+    "build": "echo done",
     "start": "ts-node index.ts"
   },
   "dependencies": {
