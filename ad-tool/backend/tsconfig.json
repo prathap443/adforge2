@@ -11,5 +11,9 @@
     "resolveJsonModule": true
   },
   "include": ["**/*.ts"],
-  "exclude": ["node_modules", "dist", "tmp"]
+  "exclude": ["node_modules", "dist", "tmp"],
+  "ts-node": {
+    "transpileOnly": true,
+    "files": true
+  }
 }
