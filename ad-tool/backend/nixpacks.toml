@@ -5,7 +5,7 @@ nixPkgs = ["ffmpeg", "nodejs_20"]
 cmds = ["npm install"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["echo done"]
 
 [start]
-cmd = "npm start"
+cmd = "node -e \"require('ts-node').register({transpileOnly:true}); require('./index.ts')\""
