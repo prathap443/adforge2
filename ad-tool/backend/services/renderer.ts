@@ -6,6 +6,53 @@ import { createSceneClip, concatClips, addAudio } from './ffmpeg'
 const VIDEOS_DIR = path.join(__dirname, '../tmp/videos')
 const FRAMES_DIR = path.join(__dirname, '../tmp/frames')
 
+type EnrichedScene = {
+  text: string
+  duration?: number
+  image?: string
+  visualType: 'hook' | 'screenshot' | 'text-only' | 'cta'
+}
+
+function ensureDir(dir: string) {
+  fs.mkdirSync(dir, { recursive: true })
+}
+
+function enrichScenes(ad: AdVariant, screenshots: string[]): EnrichedScene[] {
+  return ad.scenes.map((scene, i) => {
+    const isFirst = i === 0
+    const isLast = i === ad.scenes.length - 1
+    const hasScreenshots = screenshots.length > 0
+
+    if (isFirst) {
+      return {
+        ...scene,
+        visualType: 'hook'
+      }
+    }
+
+    if (isLast) {
+      return {
+        ...scene,
+        visualType: 'cta',
+        image: hasScreenshots ? screenshots[0] : undefined
+      }
+    }
+
+    if (hasScreenshots) {
+      return {
+        ...scene,
+        visualType: 'screenshot',
+        image: screenshots[(i - 1) % screenshots.length]
+      }
+    }
+
+    return {
+      ...scene,
+      visualType: 'text-only'
+    }
+  })
+}
+
 export async function renderAdVideo(
   ad: AdVariant,
   screenshots: string[],
@@ -15,17 +62,12 @@ export async function renderAdVideo(
     throw new Error(`Missing audio file for ad angle: ${ad.angle}`)
   }
 
-  fs.mkdirSync(VIDEOS_DIR, { recursive: true })
-  fs.mkdirSync(FRAMES_DIR, { recursive: true })
+  ensureDir(VIDEOS_DIR)
+  ensureDir(FRAMES_DIR)
 
   const outputPath = path.join(VIDEOS_DIR, `${jobId}-${ad.angle}.mp4`)
   const clipPaths: string[] = []
-
-  const enrichedScenes = ad.scenes.map((scene, i) => ({
-    ...scene,
-    image: screenshots.length > 0 ? screenshots[i % screenshots.length] : undefined,
-    visualType: screenshots.length > 0 ? 'screenshot' : 'text-only'
-  }))
+  const enrichedScenes = enrichScenes(ad, screenshots)
 
   for (let i = 0; i < enrichedScenes.length; i++) {
     const scene = enrichedScenes[i]
@@ -33,11 +75,10 @@ export async function renderAdVideo(
 
     await createSceneClip({
       text: scene.text,
-      duration: scene.duration || 4,
+      duration: scene.duration || 3,
       outputPath: clipPath,
-      imagePath: scene.image,
-      isCta: i === enrichedScenes.length - 1,
-      jobId
+      imagePath: scene.visualType === 'screenshot' || scene.visualType === 'cta' ? scene.image : undefined,
+      isCta: scene.visualType === 'cta'
     })
 
     clipPaths.push(clipPath)
@@ -50,7 +91,10 @@ export async function renderAdVideo(
   for (const p of clipPaths) {
     if (fs.existsSync(p)) fs.unlinkSync(p)
   }
-  if (fs.existsSync(silentVideoPath)) fs.unlinkSync(silentVideoPath)
+
+  if (fs.existsSync(silentVideoPath)) {
+    fs.unlinkSync(silentVideoPath)
+  }
 
   console.log(`[Renderer] Done: ${outputPath}`)
   return outputPath
