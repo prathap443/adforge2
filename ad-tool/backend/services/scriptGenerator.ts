@@ -69,7 +69,7 @@ CTA: ${input.cta}`
         .replace(/```/g, '')
         .trim()
 
-      console.log(`[ScriptGen] Attempt ${attempt} raw response:`, cleaned.substring(0, 200))
+      console.log(`[ScriptGen] FULL RAW:`, cleaned)
 
       const parsed = JSON.parse(cleaned)
 
